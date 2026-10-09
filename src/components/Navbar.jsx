@@ -1,8 +1,9 @@
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Menu, ShoppingBag, X } from "lucide-react";
 import { site } from "../config/site.js";
 import { useCart } from "../context/CartContext.jsx";
+import { useDialog } from "../hooks/useDialog.js";
 import { useLanguage } from "../i18n/LanguageContext.jsx";
 import { formatCount } from "../utils/format.js";
 
@@ -44,7 +45,12 @@ export default function Navbar() {
   const { lang, t } = useLanguage();
   const [scrolled, setScrolled] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [headerHeight, setHeaderHeight] = useState(0);
+  const barRef = useRef(null);
+  const menuRef = useRef(null);
   const reduce = useReducedMotion();
+
+  useDialog(menuOpen, menuRef, () => setMenuOpen(false));
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
@@ -54,13 +60,23 @@ export default function Navbar() {
   }, []);
 
   useEffect(() => {
-    if (!menuOpen) return undefined;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previous;
+    const media = window.matchMedia("(min-width: 1024px)");
+    const onChange = () => {
+      if (media.matches) setMenuOpen(false);
     };
-  }, [menuOpen]);
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    const bar = barRef.current;
+    if (!bar) return undefined;
+    const measure = () => setHeaderHeight(bar.getBoundingClientRect().height);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(bar);
+    return () => observer.disconnect();
+  }, []);
 
   function closeMenu() {
     setMenuOpen(false);
@@ -68,6 +84,23 @@ export default function Navbar() {
 
   return (
     <header className="sticky top-0 z-40">
+      <AnimatePresence>
+        {menuOpen ? (
+          <motion.button
+            key="menu-backdrop"
+            type="button"
+            aria-label={t.closeMenu}
+            className="fixed inset-0 z-0 bg-espresso/45 lg:hidden"
+            onClick={closeMenu}
+            initial={reduce ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.22, 1, 0.36, 1] }}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      <div ref={barRef} className="relative z-10">
       <div className="bg-espresso text-ivory">
         <p className="px-4 py-2 text-center text-[0.78rem] uppercase tracking-[0.22em]">{t.announcement}</p>
       </div>
@@ -121,32 +154,49 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+      </div>
 
       <AnimatePresence>
         {menuOpen ? (
           <motion.nav
+            key="menu-panel"
+            ref={menuRef}
             id="menu-mobile"
+            role="dialog"
+            aria-modal="true"
             aria-label={t.mobileNavLabel}
-            className="fixed inset-0 z-30 flex flex-col bg-ivory px-6 pb-10 pt-32 lg:hidden"
-            initial={reduce ? false : { opacity: 0, y: -12 }}
+            tabIndex={-1}
+            className="absolute inset-x-0 top-full z-10 overflow-y-auto border-b border-line bg-ivory px-5 pt-2 pb-[max(2rem,env(safe-area-inset-bottom))] shadow-[0_24px_40px_rgba(41,43,37,0.08)] outline-none lg:hidden"
+            style={{ maxHeight: `calc(100dvh - ${headerHeight}px)` }}
+            initial={reduce ? false : { opacity: 0, y: -8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={reduce ? { opacity: 0 } : { opacity: 0, y: -8 }}
             transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
           >
-            <LanguageSwitch className="mb-6" />
+            <div className="flex items-center justify-between gap-4 border-b border-line">
+              <LanguageSwitch />
+              <button
+                type="button"
+                className="flex h-11 w-11 shrink-0 items-center justify-center"
+                onClick={closeMenu}
+                aria-label={t.closeMenu}
+              >
+                <X size={22} strokeWidth={1.5} />
+              </button>
+            </div>
             {t.nav.map((item) => (
               <a
                 key={item.href}
                 href={item.href}
                 onClick={closeMenu}
-                className="border-b border-line py-4 font-serif text-4xl text-espresso"
+                className="block border-b border-line py-4 font-serif text-3xl leading-tight text-espresso"
               >
                 {item.label}
               </a>
             ))}
             <button
               type="button"
-              className="mt-8 self-start text-[0.75rem] uppercase tracking-[0.16em]"
+              className="mt-6 min-h-11 text-[0.75rem] uppercase tracking-[0.16em]"
               onClick={() => {
                 closeMenu();
                 setCartOpen(true);
